@@ -1,0 +1,30 @@
+{
+  "name": "algolia-tools",
+  "license": "MIT",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "algoliasearch": "^5.20.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-json-tree": "^0.19.0",
+    "vite": "^5.3.4"
+  },
+  "scripts": {
+    "export": "bun src/admin/export.ts",
+    "import": "bun src/admin/import.ts",
+    "reformat": "bun src/admin/reformat.ts",
+    "dev": "bunx --bun vite",
+    "build": "bunx --bun vite build",
+    "serve": "vite preview"
+  }
+}

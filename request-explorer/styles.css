@@ -1,0 +1,44 @@
+body {
+  font-family: monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.decoder {
+  margin-bottom: 1em;
+}
+
+.group {
+  display: grid;
+  grid-gap: 0.3em;
+  grid-template-columns: 8fr 1fr;
+}
+
+input {
+  width: 100%;
+  padding: 0.4em;
+  font: inherit;
+  border: 0.2em solid currentColor;
+}
+
+button {
+  border: 0.2em solid currentColor;
+  font: inherit;
+}
+
+.error {
+  margin: 1em;
+  padding: 1em;
+  font-weight: bold;
+  border: 0.2em solid currentColor;
+  color: black;
+  background: pink;
+}
+
+.decoderList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80ch, 1fr));
+  grid-gap: 1em;
+}
