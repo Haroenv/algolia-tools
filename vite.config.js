@@ -1,5 +1,9 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const config = defineConfig({
   base: './',
@@ -8,6 +12,14 @@ const config = defineConfig({
     include: ['react/jsx-runtime'],
   },
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        nested: resolve(__dirname, 'request-explorer/index.html'),
+      },
+    },
+  },
 });
 
 export default config;
