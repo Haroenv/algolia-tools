@@ -131,7 +131,7 @@ export function decode(data: string) {
   const json: { requests: Array<Record<string, any>> } = JSON.parse(
     cleanedJSON,
     (key, val) => {
-      if (key === 'params') {
+      if (key === 'params' && typeof val === 'string') {
         return Object.fromEntries(
           [...new URLSearchParams(decodeURIComponent(val))].map(([k, v]) => {
             if (isFakeArray(v)) {
