@@ -35,6 +35,7 @@ function shouldExpandNode(name: unknown, data: unknown, level: number) {
 function Decoder({ defaultValue = '' }) {
   const [demoIndex, setDemoIndex] = useState(0);
   const [data, setData] = useState(defaultValue);
+  const [results, setResults] = useState<Record<string, any>>();
   let json: { requests?: Array<Record<string, any>> } = {};
   let appId: string | undefined = undefined;
   let apiKey: string | undefined = undefined;
@@ -51,7 +52,10 @@ function Decoder({ defaultValue = '' }) {
     <div className="decoder">
       <div className="group">
         <input
-          onChange={(e) => setData(e.target.value)}
+          onChange={(e) => {
+            setData(e.target.value);
+            setResults(undefined);
+          }}
           value={data}
           className="data-input"
         />
@@ -79,17 +83,6 @@ function Decoder({ defaultValue = '' }) {
             <label>
               decoded: <input readOnly value={JSON.stringify(json)} />
             </label>
-            {apiKey && appId && json.requests && (
-              <label>
-                search:{' '}
-                <input
-                  readOnly
-                  value={`window.algoliasearch("${appId}","${apiKey}").search(${JSON.stringify(
-                    json.requests
-                  )})`}
-                />
-              </label>
-            )}
             {Boolean(algoliaAgent.length) && (
               <details>
                 <summary>algolia agent</summary>
@@ -100,6 +93,40 @@ function Decoder({ defaultValue = '' }) {
                   hideRoot
                 />
               </details>
+            )}
+            {apiKey && appId && json.requests && (
+              <>
+                <label htmlFor="searchFunction">search: </label>
+                <div className="group">
+                  <input
+                    id="searchFunction"
+                    readOnly
+                    value={`window.algoliasearch("${appId}","${apiKey}").search(${JSON.stringify(
+                      json.requests
+                    )})`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      algoliasearch(appId, apiKey)
+                        .search(json.requests as any)
+                        .then((res) => setResults(res))
+                        .catch((e) => setResults(e))
+                    }
+                  >
+                    search
+                  </button>
+                </div>
+              </>
+            )}
+            {Boolean(results) && (
+              <JSONTree
+                data={results}
+                invertTheme
+                shouldExpandNodeInitially={shouldExpandNode}
+                theme={brightTheme}
+                hideRoot
+              />
             )}
           </>
         )
