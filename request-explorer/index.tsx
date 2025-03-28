@@ -23,7 +23,7 @@ const brightTheme = {
   base0A: '#fda331',
   base0B: '#a1c659',
   base0C: '#76c7b7',
-  base0D: '#6fb3d2',
+  base0D: '#ffffff',
   base0E: '#d381c3',
   base0F: '#be643c',
 };
