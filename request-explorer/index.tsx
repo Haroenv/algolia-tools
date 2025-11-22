@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, createContext, useContext } from 'react';
 import * as ReactDOM from 'react-dom/client';
 import { JSONTree } from 'react-json-tree';
+import { Differ, Viewer } from 'json-diff-kit';
 import { liteClient as algoliasearch } from 'algoliasearch/lite';
 import { testData } from './testData';
 
+import 'json-diff-kit/dist/viewer.css';
 import './styles.css';
 import { decode } from './decode';
 
@@ -30,6 +32,21 @@ const brightTheme = {
 
 function shouldExpandNode(name: unknown, data: unknown, level: number) {
   return level < 5;
+}
+
+function Tree({ data }: { data: object }) {
+  return (
+    <>
+      <Comparable item={data} />
+      <JSONTree
+        data={data}
+        invertTheme
+        shouldExpandNodeInitially={shouldExpandNode}
+        theme={brightTheme}
+        hideRoot
+      />
+    </>
+  );
 }
 
 function Decoder({ defaultValue = '' }) {
@@ -73,25 +90,14 @@ function Decoder({ defaultValue = '' }) {
           <div className="error">{error.message}</div>
         ) : (
           <>
-            <JSONTree
-              data={json}
-              invertTheme
-              shouldExpandNodeInitially={shouldExpandNode}
-              theme={brightTheme}
-              hideRoot
-            />
+            <Tree data={json} />
             <label>
               decoded: <input readOnly value={JSON.stringify(json)} />
             </label>
             {Boolean(algoliaAgent.length) && (
               <details>
                 <summary>algolia agent</summary>
-                <JSONTree
-                  data={algoliaAgent}
-                  invertTheme
-                  theme={brightTheme}
-                  hideRoot
-                />
+                <Tree data={algoliaAgent} />
               </details>
             )}
             {apiKey && appId && json.requests && (
@@ -119,18 +125,76 @@ function Decoder({ defaultValue = '' }) {
                 </div>
               </>
             )}
-            {Boolean(results) && (
-              <JSONTree
-                data={results}
-                invertTheme
-                shouldExpandNodeInitially={shouldExpandNode}
-                theme={brightTheme}
-                hideRoot
-              />
-            )}
+            {Boolean(results) && <Tree data={results!} />}
           </>
         )
       ) : null}
+    </div>
+  );
+}
+
+const differ = new Differ({
+  detectCircular: true,
+  maxDepth: Infinity,
+  showModifications: true,
+  arrayDiffMethod: 'lcs',
+});
+
+const DiffContext = createContext<{
+  toDiff: { a?: object; b?: object };
+  setToDiff: React.Dispatch<React.SetStateAction<{ a?: object; b?: object }>>;
+} | null>(null);
+
+function Comparable({ item }: { item: object }) {
+  const { toDiff, setToDiff } = useContext(DiffContext)!;
+
+  return (
+    <div className="compare-group">
+      <button
+        type="button"
+        className={
+          JSON.stringify(toDiff.a) === JSON.stringify(item) ? 'active' : ''
+        }
+        onClick={() => {
+          setToDiff((prev) => ({ ...prev, a: item }));
+        }}
+      >
+        Compare: A
+      </button>
+      <button
+        type="button"
+        className={
+          JSON.stringify(toDiff.b) === JSON.stringify(item) ? 'active' : ''
+        }
+        onClick={() => {
+          setToDiff((prev) => ({ ...prev, b: item }));
+        }}
+      >
+        Compare: B
+      </button>
+    </div>
+  );
+}
+
+function DiffViewer() {
+  const { toDiff } = useContext(DiffContext)!;
+  if (toDiff.a === undefined || toDiff.b === undefined) {
+    return null;
+  }
+
+  const diff = differ.diff(toDiff.a, toDiff.b);
+
+  return (
+    <div>
+      <Viewer
+        diff={diff}
+        highlightInlineDiff
+        inlineDiffOptions={{
+          mode: 'word',
+        }}
+        hideUnchangedLines
+        syntaxHighlight={false}
+      />
     </div>
   );
 }
@@ -142,6 +206,7 @@ const defaultValues = [...searchParams.values()];
 function App() {
   const [num, setNum] = useState(searchParams.size || 1);
   const [link, setLink] = useState('');
+  const [toDiff, setToDiff] = useState<{ a?: object; b?: object }>({});
 
   useEffect(() => {
     (window as any).algoliasearch = algoliasearch;
@@ -149,7 +214,7 @@ function App() {
   }, []);
 
   return (
-    <>
+    <DiffContext.Provider value={{ toDiff, setToDiff }}>
       <h1>Raw Algolia request parser</h1>
       <div className="decoderList">
         {Array.from({ length: num }).map((_, i) => (
@@ -192,7 +257,8 @@ function App() {
         </button>{' '}
         {link && <a href={link}>shareable link</a>}
       </p>
-    </>
+      <DiffViewer />
+    </DiffContext.Provider>
   );
 }
 

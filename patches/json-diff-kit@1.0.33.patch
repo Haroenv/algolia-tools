@@ -1,0 +1,111 @@
+diff --git a/node_modules/json-diff-kit/.bun-tag-4ccc2db513dd2392 b/.bun-tag-4ccc2db513dd2392
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/dist/cjs/viewer.js b/dist/cjs/viewer.js
+index b915af61a6139ce933e3a7b0ca63b81c2e836ec3..47aa070955118eba41d6ab0087b1edb796115849 100644
+--- a/dist/cjs/viewer.js
++++ b/dist/cjs/viewer.js
+@@ -1036,7 +1036,7 @@ const Viewer = (props)=>{
+                 key: `expand-line-${index}`,
+                 className: "expand-line"
+             }, /*#__PURE__*/ React__namespace.createElement("td", {
+-                colSpan: 4,
++                colSpan: props.lineNumbers ? 4 :2,
+                 className: `${hasLinesBefore ? 'has-lines-before' : ''} ${hasLinesAfter ? 'has-lines-after' : ''}`
+             }, typeof hideUnchangedLines !== 'boolean' && hideUnchangedLines.expandLineRenderer ? hideUnchangedLines.expandLineRenderer({
+                 hasLinesBefore,
+@@ -1053,7 +1053,7 @@ const Viewer = (props)=>{
+                 key: "message-line",
+                 className: "message-line"
+             }, /*#__PURE__*/ React__namespace.createElement("td", {
+-                colSpan: 4
++                colSpan: props.lineNumbers ? 4 :2
+             }, mergedTexts.noChangeDetected));
+         }
+         if (!props.virtual) {
+@@ -1070,7 +1070,7 @@ const Viewer = (props)=>{
+         }
+         if (firstElementTop > scrollBottom || firstElementTop + totalHeightRef.current < scrollTop) {
+             return /*#__PURE__*/ React__namespace.createElement("tr", null, /*#__PURE__*/ React__namespace.createElement("td", {
+-                colSpan: 4,
++                colSpan: props.lineNumbers ? 4 :2,
+                 style: {
+                     height: `${totalHeightRef.current}px`
+                 }
+@@ -1082,19 +1082,19 @@ const Viewer = (props)=>{
+         const [topHeight, bottomHeight] = calculatePlaceholderHeight(segmentsRef.current, accTopRef.current, startSegment, startLine, endSegment, endLine, itemHeight, expandLineHeight, totalHeightRef.current);
+         const visibleSegments = segmentsRef.current.slice(startSegment, endSegment + 1);
+         return visibleSegments.length ? /*#__PURE__*/ React__namespace.createElement(React__namespace.Fragment, null, /*#__PURE__*/ React__namespace.createElement("tr", null, /*#__PURE__*/ React__namespace.createElement("td", {
+-            colSpan: 4,
++            colSpan: props.lineNumbers ? 4 :2,
+             style: {
+                 height: topHeight,
+                 padding: 0
+             }
+         })), visibleSegments.map((segment, index)=>renderSegment(segment, index, startLine, endLine, syntaxHighlightEnabled)), /*#__PURE__*/ React__namespace.createElement("tr", null, /*#__PURE__*/ React__namespace.createElement("td", {
+-            colSpan: 4,
++            colSpan: props.lineNumbers ? 4 :2,
+             style: {
+                 height: bottomHeight,
+                 padding: 0
+             }
+         }))) : /*#__PURE__*/ React__namespace.createElement("tr", null, /*#__PURE__*/ React__namespace.createElement("td", {
+-            colSpan: 4,
++            colSpan: props.lineNumbers ? 4 :2,
+             style: {
+                 height: `${totalHeightRef.current}px`
+             }
+diff --git a/dist/viewer.js b/dist/viewer.js
+index 8b79f9c9d9100297d25f690c9121a65cb273a498..4dd8c7676a0329f2a597708e5fb5f1eecd455f88 100644
+--- a/dist/viewer.js
++++ b/dist/viewer.js
+@@ -1015,7 +1015,7 @@ const Viewer = (props)=>{
+                 key: `expand-line-${index}`,
+                 className: "expand-line"
+             }, /*#__PURE__*/ React.createElement("td", {
+-                colSpan: 4,
++                colSpan: props.lineNumbers ? 4 :2,
+                 className: `${hasLinesBefore ? 'has-lines-before' : ''} ${hasLinesAfter ? 'has-lines-after' : ''}`
+             }, typeof hideUnchangedLines !== 'boolean' && hideUnchangedLines.expandLineRenderer ? hideUnchangedLines.expandLineRenderer({
+                 hasLinesBefore,
+@@ -1032,7 +1032,7 @@ const Viewer = (props)=>{
+                 key: "message-line",
+                 className: "message-line"
+             }, /*#__PURE__*/ React.createElement("td", {
+-                colSpan: 4
++                colSpan: props.lineNumbers ? 4 :2
+             }, mergedTexts.noChangeDetected));
+         }
+         if (!props.virtual) {
+@@ -1049,7 +1049,7 @@ const Viewer = (props)=>{
+         }
+         if (firstElementTop > scrollBottom || firstElementTop + totalHeightRef.current < scrollTop) {
+             return /*#__PURE__*/ React.createElement("tr", null, /*#__PURE__*/ React.createElement("td", {
+-                colSpan: 4,
++                colSpan: props.lineNumbers ? 4 :2,
+                 style: {
+                     height: `${totalHeightRef.current}px`
+                 }
+@@ -1061,19 +1061,19 @@ const Viewer = (props)=>{
+         const [topHeight, bottomHeight] = calculatePlaceholderHeight(segmentsRef.current, accTopRef.current, startSegment, startLine, endSegment, endLine, itemHeight, expandLineHeight, totalHeightRef.current);
+         const visibleSegments = segmentsRef.current.slice(startSegment, endSegment + 1);
+         return visibleSegments.length ? /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("tr", null, /*#__PURE__*/ React.createElement("td", {
+-            colSpan: 4,
++            colSpan: props.lineNumbers ? 4 :2,
+             style: {
+                 height: topHeight,
+                 padding: 0
+             }
+         })), visibleSegments.map((segment, index)=>renderSegment(segment, index, startLine, endLine, syntaxHighlightEnabled)), /*#__PURE__*/ React.createElement("tr", null, /*#__PURE__*/ React.createElement("td", {
+-            colSpan: 4,
++            colSpan: props.lineNumbers ? 4 :2,
+             style: {
+                 height: bottomHeight,
+                 padding: 0
+             }
+         }))) : /*#__PURE__*/ React.createElement("tr", null, /*#__PURE__*/ React.createElement("td", {
+-            colSpan: 4,
++            colSpan: props.lineNumbers ? 4 :2,
+             style: {
+                 height: `${totalHeightRef.current}px`
+             }

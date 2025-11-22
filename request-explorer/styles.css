@@ -16,6 +16,14 @@ body {
   grid-template-columns: 8fr 1fr;
 }
 
+.compare-group {
+  width: fit-content;
+  margin-block: 0.3em;
+  display: grid;
+  grid-gap: 0.3em;
+  grid-template-columns: 1fr 1fr;
+}
+
 input {
   width: 100%;
   padding: 0.4em;
@@ -26,6 +34,13 @@ input {
 button {
   border: 0.2em solid currentColor;
   font: inherit;
+  background: lightgrey;
+  cursor: pointer;
+}
+
+button.active {
+  background: white;
+  font-weight: bold;
 }
 
 .error {
