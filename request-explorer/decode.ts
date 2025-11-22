@@ -65,6 +65,9 @@ function removeCurl(data = '') {
 }
 
 function removeWrappingQuotes(data = '') {
+  if (data.startsWith('$')) {
+    data = data.slice(1);
+  }
   if (
     (data.startsWith("'") && data.endsWith("'")) ||
     (data.startsWith('"') && data.endsWith('"'))
@@ -128,25 +131,22 @@ function getHeaders(data: string) {
 export function decode(data: string) {
   const cleanedJSON = removeWrappingQuotes(removeCurl(removeEscapes(data)));
 
-  const json: { requests: Array<Record<string, any>> } = JSON.parse(
-    cleanedJSON,
-    (key, val) => {
-      if (key === 'params' && typeof val === 'string') {
-        return Object.fromEntries(
-          [...new URLSearchParams(decodeURIComponent(val))].map(([k, v]) => {
-            if (isFakeArray(v)) {
-              return [k, safeParse(v)];
-            }
-            if (isFakeNumber(v)) {
-              return [k, parseFloat(v)];
-            }
-            return [k, v];
-          })
-        );
-      }
-      return val;
+  const json: Record<string, any> = JSON.parse(cleanedJSON, (key, val) => {
+    if (key === 'params' && typeof val === 'string') {
+      return Object.fromEntries(
+        [...new URLSearchParams(decodeURIComponent(val))].map(([k, v]) => {
+          if (isFakeArray(v)) {
+            return [k, safeParse(v)];
+          }
+          if (isFakeNumber(v)) {
+            return [k, parseFloat(v)];
+          }
+          return [k, v];
+        })
+      );
     }
-  );
+    return val;
+  });
 
   const { appId, apiKey, algoliaAgent } = getCredentials(
     getURL(data).searchParams,
