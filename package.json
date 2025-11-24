@@ -21,11 +21,8 @@
     "vite": "^5.3.4"
   },
   "scripts": {
-    "export": "bun src/admin/export.ts",
-    "import": "bun src/admin/import.ts",
-    "reformat": "bun src/admin/reformat.ts",
     "dev": "bunx --bun vite",
     "build": "bunx --bun vite build",
-    "serve": "vite preview"
+    "serve": "bunx --bun vite preview"
   }
 }
