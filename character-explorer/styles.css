@@ -1,0 +1,53 @@
+.App {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  text-align: center;
+}
+
+code,
+kbd,
+pre {
+  font-family: 'SFMono', monospace;
+}
+
+p {
+  line-height: 2;
+  word-break: break-word;
+}
+
+kbd {
+  border: 1px solid lightskyblue;
+  padding: 2px;
+  margin: 1px;
+  border-radius: 2px;
+}
+
+input {
+  font: inherit;
+  border: 1px solid transparent;
+  border-bottom: 1px solid black;
+}
+
+table {
+  border-collapse: collapse;
+  margin: 1em auto;
+}
+
+thead {
+  border-bottom: 1px solid black;
+}
+
+th {
+  position: sticky;
+}
+
+th,
+td {
+  border-right: 1px solid black;
+  padding: 1em;
+}
+
+th:last-of-type,
+td:last-of-type {
+  border: none;
+}

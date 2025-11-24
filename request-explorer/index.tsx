@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react';
-import * as ReactDOM from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import { JSONTree } from 'react-json-tree';
 import { Differ, Viewer } from 'json-diff-kit';
 import { liteClient as algoliasearch } from 'algoliasearch/lite';
@@ -262,6 +262,4 @@ function App() {
   );
 }
 
-const rootDiv = document.getElementById('root') as HTMLElement;
-const root = ReactDOM.createRoot(rootDiv);
-root.render(<App />);
+createRoot(document.getElementById('root')!).render(<App />);
