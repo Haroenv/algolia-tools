@@ -14,7 +14,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "algoliasearch": "^5.20.1",
-    "json-diff-kit": "^1.0.33",
+    "json-diff-kit": "^1.0.34",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-json-tree": "^0.19.0",
@@ -27,8 +27,5 @@
     "dev": "bunx --bun vite",
     "build": "bunx --bun vite build",
     "serve": "vite preview"
-  },
-  "patchedDependencies": {
-    "json-diff-kit@1.0.33": "patches/json-diff-kit@1.0.33.patch"
   }
 }
