@@ -1,7 +1,6 @@
 {
   "name": "algolia-tools",
   "license": "MIT",
-  "module": "index.ts",
   "type": "module",
   "devDependencies": {
     "bun-types": "latest"

@@ -16,7 +16,8 @@ const config = defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        nested: resolve(__dirname, 'request-explorer/index.html'),
+        request: resolve(__dirname, 'request-explorer/index.html'),
+        character: resolve(__dirname, 'character-explorer/index.html'),
       },
     },
   },
