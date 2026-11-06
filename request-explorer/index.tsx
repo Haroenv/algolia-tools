@@ -8,6 +8,7 @@ import { testData } from './testData';
 import 'json-diff-kit/dist/viewer.css';
 import './styles.css';
 import { decode } from './decode';
+import { searchFromValues, valuesFromSearch } from './share';
 
 const brightTheme = {
   scheme: 'bright',
@@ -199,12 +200,8 @@ function DiffViewer() {
   );
 }
 
-const searchParams = new URLSearchParams(window.location.search);
-searchParams.sort();
-const defaultValues = [...searchParams.values()];
-
-function App() {
-  const [num, setNum] = useState(searchParams.size || 1);
+function App({ defaultValues }: { defaultValues: string[] }) {
+  const [num, setNum] = useState(defaultValues.length || 1);
   const [link, setLink] = useState('');
   const [toDiff, setToDiff] = useState<{ a?: object; b?: object }>({});
 
@@ -241,13 +238,7 @@ function App() {
               document.querySelectorAll<HTMLInputElement>('.data-input'),
               (i) => i.value
             );
-            console.log(values);
-            const sp = new URLSearchParams();
-            values.forEach((v, i) => {
-              sp.set(i.toString(), v);
-            });
-
-            const url = '?' + sp.toString();
+            const url = searchFromValues(values);
             setLink(url);
 
             window.history.pushState({}, document.title, url);
@@ -262,4 +253,8 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+valuesFromSearch(window.location.search).then((defaultValues) => {
+  createRoot(document.getElementById('root')!).render(
+    <App defaultValues={defaultValues} />
+  );
+});
