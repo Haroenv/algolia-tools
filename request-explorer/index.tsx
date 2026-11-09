@@ -1,4 +1,10 @@
-import { useState, useEffect, createContext, useContext } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  createContext,
+  useContext,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 import { JSONTree } from 'react-json-tree';
 import { Differ, Viewer } from 'json-diff-kit';
@@ -8,7 +14,12 @@ import { testData } from './testData';
 import 'json-diff-kit/dist/viewer.css';
 import './styles.css';
 import { decode } from './decode';
-import { searchFromValues, valuesFromSearch } from './share';
+import {
+  stateFromSearch,
+  type ShareState,
+  searchFromValues,
+  valuesFromSearch,
+} from './share';
 
 const brightTheme = {
   scheme: 'bright',
@@ -35,10 +46,10 @@ function shouldExpandNode(name: unknown, data: unknown, level: number) {
   return level < 5;
 }
 
-function Tree({ data }: { data: object }) {
+function Tree({ data, compareRef }: { data: object; compareRef?: string }) {
   return (
     <>
-      <Comparable item={data} />
+      <Comparable item={data} compareRef={compareRef} />
       <JSONTree
         data={data}
         invertTheme
@@ -50,7 +61,18 @@ function Tree({ data }: { data: object }) {
   );
 }
 
-function Decoder({ defaultValue = '' }) {
+function Decoder({
+  index,
+  defaultValue = '',
+  autoSearch = false,
+  onSearched,
+}: {
+  index: number;
+  defaultValue?: string;
+  autoSearch?: boolean;
+  onSearched: (index: number, searched: boolean) => void;
+}) {
+  const { setToDiff } = useContext(DiffContext)!;
   const [demoIndex, setDemoIndex] = useState(0);
   const [data, setData] = useState(defaultValue);
   const [results, setResults] = useState<Record<string, any>>();
@@ -66,6 +88,30 @@ function Decoder({ defaultValue = '' }) {
     error = e as Error;
   }
 
+  const runSearch = () => {
+    if (!appId || !apiKey || !json.requests) return;
+    onSearched(index, true);
+    algoliasearch(appId, apiKey)
+      .search(json.requests as any)
+      .then((res) => setResults(res))
+      .catch((e) => setResults(e));
+  };
+
+  // re-run the search when the shared link says it had been run
+  useEffect(() => {
+    if (autoSearch) runSearch();
+  }, []);
+
+  // fill in a compare pick that was restored from the URL, waiting on results
+  useEffect(() => {
+    if (!results) return;
+    const ref = `${index}.results`;
+    setToDiff((prev) => ({
+      a: prev.a?.ref === ref && !prev.a.item ? { ref, item: results } : prev.a,
+      b: prev.b?.ref === ref && !prev.b.item ? { ref, item: results } : prev.b,
+    }));
+  }, [results]);
+
   return (
     <div className="decoder">
       <div className="group">
@@ -73,6 +119,7 @@ function Decoder({ defaultValue = '' }) {
           onChange={(e) => {
             setData(e.target.value);
             setResults(undefined);
+            onSearched(index, false);
           }}
           value={data}
           className="data-input"
@@ -91,14 +138,14 @@ function Decoder({ defaultValue = '' }) {
           <div className="error">{error.message}</div>
         ) : (
           <>
-            <Tree data={json} />
+            <Tree data={json} compareRef={`${index}`} />
             <label>
               decoded: <input readOnly value={JSON.stringify(json)} />
             </label>
             {Boolean(algoliaAgent.length) && (
               <details>
                 <summary>algolia agent</summary>
-                <Tree data={algoliaAgent} />
+                <Tree data={algoliaAgent} compareRef={`${index}.agent`} />
               </details>
             )}
             {apiKey && appId && json.requests && (
@@ -109,24 +156,18 @@ function Decoder({ defaultValue = '' }) {
                     id="searchFunction"
                     readOnly
                     value={`window.algoliasearch("${appId}","${apiKey}").search(${JSON.stringify(
-                      json.requests
+                      json.requests,
                     )})`}
                   />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      algoliasearch(appId, apiKey)
-                        .search(json.requests as any)
-                        .then((res) => setResults(res))
-                        .catch((e) => setResults(e))
-                    }
-                  >
+                  <button type="button" onClick={runSearch}>
                     search
                   </button>
                 </div>
               </>
             )}
-            {Boolean(results) && <Tree data={results!} />}
+            {Boolean(results) && (
+              <Tree data={results!} compareRef={`${index}.results`} />
+            )}
           </>
         )
       ) : null}
@@ -141,12 +182,35 @@ const differ = new Differ({
   arrayDiffMethod: 'lcs',
 });
 
+// `item` is missing while a restored `.results` pick waits for its search
+type Picked = { item?: object; ref?: string };
+type ToDiff = { a?: Picked; b?: Picked };
+
 const DiffContext = createContext<{
-  toDiff: { a?: object; b?: object };
-  setToDiff: React.Dispatch<React.SetStateAction<{ a?: object; b?: object }>>;
+  toDiff: ToDiff;
+  setToDiff: React.Dispatch<React.SetStateAction<ToDiff>>;
 } | null>(null);
 
-function Comparable({ item }: { item: object }) {
+function resolveRef(ref: string | undefined, values: string[]) {
+  if (!ref) return undefined;
+  const [index, kind] = ref.split('.');
+  try {
+    if (kind === 'results') return { ref };
+    const { json, algoliaAgent } = decode(values[Number(index)] ?? '');
+    const item = kind === 'agent' ? algoliaAgent : json;
+    return item ? { item: item as object, ref } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function Comparable({
+  item,
+  compareRef,
+}: {
+  item: object;
+  compareRef?: string;
+}) {
   const { toDiff, setToDiff } = useContext(DiffContext)!;
 
   return (
@@ -154,10 +218,12 @@ function Comparable({ item }: { item: object }) {
       <button
         type="button"
         className={
-          JSON.stringify(toDiff.a) === JSON.stringify(item) ? 'active' : ''
+          JSON.stringify(toDiff.a?.item) === JSON.stringify(item)
+            ? 'active'
+            : ''
         }
         onClick={() => {
-          setToDiff((prev) => ({ ...prev, a: item }));
+          setToDiff((prev) => ({ ...prev, a: { item, ref: compareRef } }));
         }}
       >
         Compare: A
@@ -165,10 +231,12 @@ function Comparable({ item }: { item: object }) {
       <button
         type="button"
         className={
-          JSON.stringify(toDiff.b) === JSON.stringify(item) ? 'active' : ''
+          JSON.stringify(toDiff.b?.item) === JSON.stringify(item)
+            ? 'active'
+            : ''
         }
         onClick={() => {
-          setToDiff((prev) => ({ ...prev, b: item }));
+          setToDiff((prev) => ({ ...prev, b: { item, ref: compareRef } }));
         }}
       >
         Compare: B
@@ -179,11 +247,11 @@ function Comparable({ item }: { item: object }) {
 
 function DiffViewer() {
   const { toDiff } = useContext(DiffContext)!;
-  if (toDiff.a === undefined || toDiff.b === undefined) {
+  if (toDiff.a?.item === undefined || toDiff.b?.item === undefined) {
     return null;
   }
 
-  const diff = differ.diff(toDiff.a, toDiff.b);
+  const diff = differ.diff(toDiff.a.item, toDiff.b.item);
 
   return (
     <div>
@@ -200,10 +268,27 @@ function DiffViewer() {
   );
 }
 
-function App({ defaultValues }: { defaultValues: string[] }) {
+function App({
+  defaultValues,
+  defaultState,
+}: {
+  defaultValues: string[];
+  defaultState: Required<ShareState>;
+}) {
+  const { compare: defaultCompare, searched: defaultSearched } = defaultState;
+  const [searched, setSearched] = useState(defaultSearched);
+  const onSearched = useCallback((index: number, isSearched: boolean) => {
+    setSearched((prev) => [
+      ...prev.filter((i) => i !== index),
+      ...(isSearched ? [index] : []),
+    ]);
+  }, []);
   const [num, setNum] = useState(defaultValues.length || 1);
   const [link, setLink] = useState('');
-  const [toDiff, setToDiff] = useState<{ a?: object; b?: object }>({});
+  const [toDiff, setToDiff] = useState<ToDiff>(() => ({
+    a: resolveRef(defaultCompare.a, defaultValues),
+    b: resolveRef(defaultCompare.b, defaultValues),
+  }));
 
   useEffect(() => {
     (window as any).algoliasearch = algoliasearch;
@@ -215,7 +300,13 @@ function App({ defaultValues }: { defaultValues: string[] }) {
       <h1>Raw Algolia request parser</h1>
       <div className="decoderList">
         {Array.from({ length: num }).map((_, i) => (
-          <Decoder key={i} defaultValue={defaultValues[i]} />
+          <Decoder
+            key={i}
+            index={i}
+            defaultValue={defaultValues[i]}
+            autoSearch={defaultSearched.includes(i)}
+            onSearched={onSearched}
+          />
         ))}
       </div>
       <p>
@@ -236,9 +327,12 @@ function App({ defaultValues }: { defaultValues: string[] }) {
           onClick={() => {
             const values = Array.from(
               document.querySelectorAll<HTMLInputElement>('.data-input'),
-              (i) => i.value
+              (i) => i.value,
             );
-            const url = searchFromValues(values);
+            const url = searchFromValues(values, {
+              compare: { a: toDiff.a?.ref, b: toDiff.b?.ref },
+              searched: searched.filter((i) => i < num).sort((a, b) => a - b),
+            });
             setLink(url);
 
             window.history.pushState({}, document.title, url);
@@ -255,6 +349,12 @@ function App({ defaultValues }: { defaultValues: string[] }) {
 
 valuesFromSearch(window.location.search).then((defaultValues) => {
   createRoot(document.getElementById('root')!).render(
-    <App defaultValues={defaultValues} />
+    <App
+      defaultValues={defaultValues}
+      defaultState={stateFromSearch(
+        window.location.search,
+        defaultValues.length || 1,
+      )}
+    />,
   );
 });
