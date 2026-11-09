@@ -2,6 +2,9 @@ import {
   useState,
   useEffect,
   useCallback,
+  useDeferredValue,
+  useMemo,
+  memo,
   createContext,
   useContext,
 } from 'react';
@@ -46,11 +49,19 @@ function shouldExpandNode(name: unknown, data: unknown, level: number) {
   return level < 5;
 }
 
-function Tree({ data, compareRef }: { data: object; compareRef?: string }) {
+const MemoJSONTree = memo(JSONTree);
+
+const Tree = memo(function Tree({
+  data,
+  compareRef,
+}: {
+  data: object;
+  compareRef?: string;
+}) {
   return (
     <>
       <Comparable item={data} compareRef={compareRef} />
-      <JSONTree
+      <MemoJSONTree
         data={data}
         invertTheme
         shouldExpandNodeInitially={shouldExpandNode}
@@ -59,34 +70,40 @@ function Tree({ data, compareRef }: { data: object; compareRef?: string }) {
       />
     </>
   );
-}
+});
 
-function Decoder({
+const Decoder = memo(function Decoder({
   index,
   defaultValue = '',
   autoSearch = false,
   onSearched,
+  onValueChange,
 }: {
   index: number;
   defaultValue?: string;
   autoSearch?: boolean;
   onSearched: (index: number, searched: boolean) => void;
+  onValueChange: (index: number, value: string) => void;
 }) {
-  const { setToDiff } = useContext(DiffContext)!;
+  const setToDiff = useContext(SetDiffContext);
   const [demoIndex, setDemoIndex] = useState(0);
   const [data, setData] = useState(defaultValue);
   const [results, setResults] = useState<Record<string, any>>();
-  let json: ReturnType<typeof decode>['json'] = {};
-  let appId: string | undefined = undefined;
-  let apiKey: string | undefined = undefined;
-  let algoliaAgent: string[] = [];
-  let error: Error | undefined = undefined;
-
-  try {
-    ({ json, appId, apiKey, algoliaAgent } = decode(data));
-  } catch (e) {
-    error = e as Error;
-  }
+  // decoding + rendering the trees can lag behind typing
+  const deferredData = useDeferredValue(data);
+  const { json, appId, apiKey, algoliaAgent, error } = useMemo(() => {
+    try {
+      return { ...decode(deferredData), error: undefined as Error | undefined };
+    } catch (e) {
+      return {
+        json: {} as ReturnType<typeof decode>['json'],
+        appId: undefined as string | undefined,
+        apiKey: undefined as string | undefined,
+        algoliaAgent: [] as string[],
+        error: e as Error,
+      };
+    }
+  }, [deferredData]);
 
   const runSearch = () => {
     if (!appId || !apiKey || !json.requests) return;
@@ -118,6 +135,7 @@ function Decoder({
         <input
           onChange={(e) => {
             setData(e.target.value);
+            onValueChange(index, e.target.value);
             setResults(undefined);
             onSearched(index, false);
           }}
@@ -126,14 +144,16 @@ function Decoder({
         />
         <button
           onClick={() => {
-            setData(testData[demoIndex % testData.length]);
+            const demo = testData[demoIndex % testData.length];
+            setData(demo);
+            onValueChange(index, demo);
             setDemoIndex(demoIndex + 1);
           }}
         >
           demo
         </button>
       </div>
-      {data ? (
+      {deferredData ? (
         error ? (
           <div className="error">{error.message}</div>
         ) : (
@@ -173,7 +193,7 @@ function Decoder({
       ) : null}
     </div>
   );
-}
+});
 
 const differ = new Differ({
   detectCircular: true,
@@ -186,10 +206,12 @@ const differ = new Differ({
 type Picked = { item?: object; ref?: string };
 type ToDiff = { a?: Picked; b?: Picked };
 
-const DiffContext = createContext<{
-  toDiff: ToDiff;
-  setToDiff: React.Dispatch<React.SetStateAction<ToDiff>>;
-} | null>(null);
+// the setter is stable, so it lives in its own context: components that only
+// write (every Decoder) don't re-render when a pick changes
+const DiffContext = createContext<ToDiff>({});
+const SetDiffContext = createContext<
+  React.Dispatch<React.SetStateAction<ToDiff>>
+>(() => {});
 
 function resolveRef(ref: string | undefined, values: string[]) {
   if (!ref) return undefined;
@@ -211,17 +233,31 @@ function Comparable({
   item: object;
   compareRef?: string;
 }) {
-  const { toDiff, setToDiff } = useContext(DiffContext)!;
+  const toDiff = useContext(DiffContext);
+  const setToDiff = useContext(SetDiffContext);
+
+  // a pick follows its source: when the tree changes (the input was edited, or
+  // it was restored from the URL) the picked item is replaced by the new one
+  useEffect(() => {
+    if (!compareRef) return;
+    setToDiff((prev) => {
+      const a =
+        prev.a?.ref === compareRef && prev.a.item !== item
+          ? { ref: compareRef, item }
+          : prev.a;
+      const b =
+        prev.b?.ref === compareRef && prev.b.item !== item
+          ? { ref: compareRef, item }
+          : prev.b;
+      return a === prev.a && b === prev.b ? prev : { a, b };
+    });
+  }, [item, compareRef, setToDiff]);
 
   return (
     <div className="compare-group">
       <button
         type="button"
-        className={
-          JSON.stringify(toDiff.a?.item) === JSON.stringify(item)
-            ? 'active'
-            : ''
-        }
+        className={compareRef && toDiff.a?.ref === compareRef ? 'active' : ''}
         onClick={() => {
           setToDiff((prev) => ({ ...prev, a: { item, ref: compareRef } }));
         }}
@@ -230,11 +266,7 @@ function Comparable({
       </button>
       <button
         type="button"
-        className={
-          JSON.stringify(toDiff.b?.item) === JSON.stringify(item)
-            ? 'active'
-            : ''
-        }
+        className={compareRef && toDiff.b?.ref === compareRef ? 'active' : ''}
         onClick={() => {
           setToDiff((prev) => ({ ...prev, b: { item, ref: compareRef } }));
         }}
@@ -246,12 +278,15 @@ function Comparable({
 }
 
 function DiffViewer() {
-  const { toDiff } = useContext(DiffContext)!;
-  if (toDiff.a?.item === undefined || toDiff.b?.item === undefined) {
-    return null;
-  }
-
-  const diff = differ.diff(toDiff.a.item, toDiff.b.item);
+  const toDiff = useContext(DiffContext);
+  // the diff (lcs on big results) is slow, don't block clicks on it
+  const a = useDeferredValue(toDiff.a?.item);
+  const b = useDeferredValue(toDiff.b?.item);
+  const diff = useMemo(
+    () => (a === undefined || b === undefined ? undefined : differ.diff(a, b)),
+    [a, b],
+  );
+  if (!diff) return null;
 
   return (
     <div>
@@ -284,11 +319,53 @@ function App({
     ]);
   }, []);
   const [num, setNum] = useState(defaultValues.length || 1);
-  const [link, setLink] = useState('');
+  const [values, setValues] = useState(defaultValues);
+  const onValueChange = useCallback((index: number, value: string) => {
+    setValues((prev) => {
+      const next = [...prev];
+      for (let i = 0; i < index; i++) next[i] ??= '';
+      next[index] = value;
+      return next;
+    });
+  }, []);
   const [toDiff, setToDiff] = useState<ToDiff>(() => ({
     a: resolveRef(defaultCompare.a, defaultValues),
     b: resolveRef(defaultCompare.b, defaultValues),
   }));
+
+  // keep the URL in sync with the state, so it can always be copied. Writing
+  // it (compressing + history call) is debounced and done when idle, so typing
+  // doesn't do that work on every keystroke.
+  useEffect(() => {
+    const write = () => {
+      const current = Array.from({ length: num }, (_, i) => values[i] ?? '');
+      const state = {
+        compare: { a: toDiff.a?.ref, b: toDiff.b?.ref },
+        searched: searched.filter((i) => i < num),
+      };
+      const pristine =
+        current.every((v) => !v) && !state.compare.a && !state.compare.b;
+      window.history.replaceState(
+        {},
+        document.title,
+        pristine ? window.location.pathname : searchFromValues(current, state),
+      );
+    };
+
+    let idle: number | undefined;
+    const timeout = window.setTimeout(() => {
+      if ('requestIdleCallback' in window) {
+        idle = window.requestIdleCallback(write, { timeout: 1000 });
+      } else {
+        write();
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeout);
+      if (idle !== undefined) window.cancelIdleCallback(idle);
+    };
+  }, [values, num, toDiff, searched]);
 
   useEffect(() => {
     (window as any).algoliasearch = algoliasearch;
@@ -296,54 +373,36 @@ function App({
   }, []);
 
   return (
-    <DiffContext.Provider value={{ toDiff, setToDiff }}>
-      <h1>Raw Algolia request parser</h1>
-      <div className="decoderList">
-        {Array.from({ length: num }).map((_, i) => (
-          <Decoder
-            key={i}
-            index={i}
-            defaultValue={defaultValues[i]}
-            autoSearch={defaultSearched.includes(i)}
-            onSearched={onSearched}
-          />
-        ))}
-      </div>
-      <p>
-        <button
-          type="button"
-          disabled={num === 1}
-          onClick={() => setNum(num - 1)}
-        >
-          -
-        </button>{' '}
-        <button type="button" onClick={() => setNum(num + 1)}>
-          +
-        </button>
-      </p>
-      <p>
-        <button
-          type="button"
-          onClick={() => {
-            const values = Array.from(
-              document.querySelectorAll<HTMLInputElement>('.data-input'),
-              (i) => i.value,
-            );
-            const url = searchFromValues(values, {
-              compare: { a: toDiff.a?.ref, b: toDiff.b?.ref },
-              searched: searched.filter((i) => i < num).sort((a, b) => a - b),
-            });
-            setLink(url);
-
-            window.history.pushState({}, document.title, url);
-          }}
-        >
-          create shareable link
-        </button>{' '}
-        {link && <a href={link}>shareable link</a>}
-      </p>
-      <DiffViewer />
-    </DiffContext.Provider>
+    <SetDiffContext.Provider value={setToDiff}>
+      <DiffContext.Provider value={toDiff}>
+        <h1>Raw Algolia request parser</h1>
+        <div className="decoderList">
+          {Array.from({ length: num }).map((_, i) => (
+            <Decoder
+              key={i}
+              index={i}
+              defaultValue={defaultValues[i]}
+              autoSearch={defaultSearched.includes(i)}
+              onSearched={onSearched}
+              onValueChange={onValueChange}
+            />
+          ))}
+        </div>
+        <p>
+          <button
+            type="button"
+            disabled={num === 1}
+            onClick={() => setNum(num - 1)}
+          >
+            -
+          </button>{' '}
+          <button type="button" onClick={() => setNum(num + 1)}>
+            +
+          </button>
+        </p>
+        <DiffViewer />
+      </DiffContext.Provider>
+    </SetDiffContext.Provider>
   );
 }
 
