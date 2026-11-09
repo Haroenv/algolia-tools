@@ -10,16 +10,14 @@ import {
 } from 'react';
 import { createRoot } from 'react-dom/client';
 import { JSONTree } from 'react-json-tree';
-import { Differ, Viewer } from 'json-diff-kit';
 import { liteClient as algoliasearch } from 'algoliasearch/lite';
 import { testData } from './testData';
+import { marksByRef, pathKey, type TreeMarks } from './treeDiff';
 
-import 'json-diff-kit/dist/viewer.css';
 import './styles.css';
 import { decode } from './decode';
 import {
-  stateFromSearch,
-  type ShareState,
+  searchedFromSearch,
   searchFromValues,
   valuesFromSearch,
 } from './share';
@@ -49,26 +47,96 @@ function shouldExpandNode(name: unknown, data: unknown, level: number) {
   return level < 5;
 }
 
+// How every tree differs from the others of its kind (requests among each
+// other, responses among each other), keyed by tree ref. The trees highlight
+// it themselves.
+const MarksContext = createContext<Record<string, TreeMarks>>({});
+
+// Trees register themselves, so the app knows what there is to compare
+const RegisterContext = createContext<{
+  register: (ref: string, item: object) => void;
+  unregister: (ref: string) => void;
+}>({ register: () => {}, unregister: () => {} });
+
+function useTreeRenderers(marks: TreeMarks | undefined) {
+  return useMemo(() => {
+    if (!marks) return undefined;
+    const { side, only, of } = marks;
+    const classFor = (keyPath: readonly (string | number)[]) => {
+      const mark = side.marks.get(pathKey(keyPath));
+      return mark === 'changed' ? 'diff-changed' : mark ? `diff-${only}` : '';
+    };
+    return {
+      labelRenderer: (keyPath: readonly (string | number)[]) => (
+        <span className={classFor(keyPath)}>{keyPath[0]}:</span>
+      ),
+      valueRenderer: (
+        valueAsString: unknown,
+        _value: unknown,
+        ...keyPath: (string | number)[]
+      ) => <span className={classFor(keyPath)}>{String(valueAsString)}</span>,
+      getItemString: (
+        _type: string,
+        _data: unknown,
+        itemType: React.ReactNode,
+        itemString: string,
+        keyPath: readonly (string | number)[],
+      ) => {
+        const count = side.counts.get(pathKey(keyPath)) ?? 0;
+        return (
+          <span>
+            {itemType} {itemString}
+            {count > 0 && (
+              <span className="diff-badge">
+                {of
+                  ? count === of
+                    ? 'differs from all others'
+                    : `differs from ${count} of ${of} others`
+                  : `${count} diff`}
+              </span>
+            )}
+          </span>
+        );
+      },
+      shouldExpandNodeInitially: (
+        keyPath: readonly (string | number)[],
+        _data: unknown,
+        level: number,
+      ) => level < 5 || (side.counts.get(pathKey(keyPath)) ?? 0) > 0,
+    };
+  }, [marks?.side, marks?.only, marks?.of]);
+}
+
 const MemoJSONTree = memo(JSONTree);
 
+/**
+ * `treeRef` is `<decoder index>` for a request, `<index>.agent` or
+ * `<index>.results`: it decides what the tree is compared with.
+ */
 const Tree = memo(function Tree({
   data,
-  compareRef,
+  treeRef,
 }: {
   data: object;
-  compareRef?: string;
+  treeRef: string;
 }) {
+  const { register, unregister } = useContext(RegisterContext);
+  useEffect(() => register(treeRef, data), [treeRef, data, register]);
+  useEffect(() => () => unregister(treeRef), [treeRef, unregister]);
+
+  const renderers = useTreeRenderers(useContext(MarksContext)[treeRef]);
+
   return (
-    <>
-      <Comparable item={data} compareRef={compareRef} />
-      <MemoJSONTree
-        data={data}
-        invertTheme
-        shouldExpandNodeInitially={shouldExpandNode}
-        theme={brightTheme}
-        hideRoot
-      />
-    </>
+    <MemoJSONTree
+      // remount when highlighting starts/stops, to expand to the changes
+      key={renderers ? 'diff' : 'plain'}
+      data={data}
+      invertTheme
+      shouldExpandNodeInitially={shouldExpandNode}
+      theme={brightTheme}
+      hideRoot
+      {...renderers}
+    />
   );
 });
 
@@ -85,7 +153,6 @@ const Decoder = memo(function Decoder({
   onSearched: (index: number, searched: boolean) => void;
   onValueChange: (index: number, value: string) => void;
 }) {
-  const setToDiff = useContext(SetDiffContext);
   const [demoIndex, setDemoIndex] = useState(0);
   const [data, setData] = useState(defaultValue);
   const [results, setResults] = useState<Record<string, any>>();
@@ -119,16 +186,6 @@ const Decoder = memo(function Decoder({
     if (autoSearch) runSearch();
   }, []);
 
-  // fill in a compare pick that was restored from the URL, waiting on results
-  useEffect(() => {
-    if (!results) return;
-    const ref = `${index}.results`;
-    setToDiff((prev) => ({
-      a: prev.a?.ref === ref && !prev.a.item ? { ref, item: results } : prev.a,
-      b: prev.b?.ref === ref && !prev.b.item ? { ref, item: results } : prev.b,
-    }));
-  }, [results]);
-
   return (
     <div className="decoder">
       <div className="group">
@@ -158,14 +215,14 @@ const Decoder = memo(function Decoder({
           <div className="error">{error.message}</div>
         ) : (
           <>
-            <Tree data={json} compareRef={`${index}`} />
+            <Tree data={json} treeRef={`${index}`} />
             <label>
               decoded: <input readOnly value={JSON.stringify(json)} />
             </label>
             {Boolean(algoliaAgent.length) && (
               <details>
                 <summary>algolia agent</summary>
-                <Tree data={algoliaAgent} compareRef={`${index}.agent`} />
+                <Tree data={algoliaAgent} treeRef={`${index}.agent`} />
               </details>
             )}
             {apiKey && appId && json.requests && (
@@ -186,7 +243,7 @@ const Decoder = memo(function Decoder({
               </>
             )}
             {Boolean(results) && (
-              <Tree data={results!} compareRef={`${index}.results`} />
+              <Tree data={results!} treeRef={`${index}.results`} />
             )}
           </>
         )
@@ -195,122 +252,13 @@ const Decoder = memo(function Decoder({
   );
 });
 
-const differ = new Differ({
-  detectCircular: true,
-  maxDepth: Infinity,
-  showModifications: true,
-  arrayDiffMethod: 'lcs',
-});
-
-// `item` is missing while a restored `.results` pick waits for its search
-type Picked = { item?: object; ref?: string };
-type ToDiff = { a?: Picked; b?: Picked };
-
-// the setter is stable, so it lives in its own context: components that only
-// write (every Decoder) don't re-render when a pick changes
-const DiffContext = createContext<ToDiff>({});
-const SetDiffContext = createContext<
-  React.Dispatch<React.SetStateAction<ToDiff>>
->(() => {});
-
-function resolveRef(ref: string | undefined, values: string[]) {
-  if (!ref) return undefined;
-  const [index, kind] = ref.split('.');
-  try {
-    if (kind === 'results') return { ref };
-    const { json, algoliaAgent } = decode(values[Number(index)] ?? '');
-    const item = kind === 'agent' ? algoliaAgent : json;
-    return item ? { item: item as object, ref } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function Comparable({
-  item,
-  compareRef,
-}: {
-  item: object;
-  compareRef?: string;
-}) {
-  const toDiff = useContext(DiffContext);
-  const setToDiff = useContext(SetDiffContext);
-
-  // a pick follows its source: when the tree changes (the input was edited, or
-  // it was restored from the URL) the picked item is replaced by the new one
-  useEffect(() => {
-    if (!compareRef) return;
-    setToDiff((prev) => {
-      const a =
-        prev.a?.ref === compareRef && prev.a.item !== item
-          ? { ref: compareRef, item }
-          : prev.a;
-      const b =
-        prev.b?.ref === compareRef && prev.b.item !== item
-          ? { ref: compareRef, item }
-          : prev.b;
-      return a === prev.a && b === prev.b ? prev : { a, b };
-    });
-  }, [item, compareRef, setToDiff]);
-
-  return (
-    <div className="compare-group">
-      <button
-        type="button"
-        className={compareRef && toDiff.a?.ref === compareRef ? 'active' : ''}
-        onClick={() => {
-          setToDiff((prev) => ({ ...prev, a: { item, ref: compareRef } }));
-        }}
-      >
-        Compare: A
-      </button>
-      <button
-        type="button"
-        className={compareRef && toDiff.b?.ref === compareRef ? 'active' : ''}
-        onClick={() => {
-          setToDiff((prev) => ({ ...prev, b: { item, ref: compareRef } }));
-        }}
-      >
-        Compare: B
-      </button>
-    </div>
-  );
-}
-
-function DiffViewer() {
-  const toDiff = useContext(DiffContext);
-  // the diff (lcs on big results) is slow, don't block clicks on it
-  const a = useDeferredValue(toDiff.a?.item);
-  const b = useDeferredValue(toDiff.b?.item);
-  const diff = useMemo(
-    () => (a === undefined || b === undefined ? undefined : differ.diff(a, b)),
-    [a, b],
-  );
-  if (!diff) return null;
-
-  return (
-    <div>
-      <Viewer
-        diff={diff}
-        highlightInlineDiff
-        inlineDiffOptions={{
-          mode: 'word',
-        }}
-        hideUnchangedLines
-        syntaxHighlight={false}
-      />
-    </div>
-  );
-}
-
 function App({
   defaultValues,
-  defaultState,
+  defaultSearched,
 }: {
   defaultValues: string[];
-  defaultState: Required<ShareState>;
+  defaultSearched: number[];
 }) {
-  const { compare: defaultCompare, searched: defaultSearched } = defaultState;
   const [searched, setSearched] = useState(defaultSearched);
   const onSearched = useCallback((index: number, isSearched: boolean) => {
     setSearched((prev) => [
@@ -328,10 +276,26 @@ function App({
       return next;
     });
   }, []);
-  const [toDiff, setToDiff] = useState<ToDiff>(() => ({
-    a: resolveRef(defaultCompare.a, defaultValues),
-    b: resolveRef(defaultCompare.b, defaultValues),
-  }));
+
+  // every tree that is shown, to compare them. The comparing can be slow (lcs
+  // on big results), so it's deferred to keep typing and clicking responsive.
+  const [trees, setTrees] = useState<Record<string, object>>({});
+  const register = useMemo(
+    () => ({
+      register: (ref: string, item: object) =>
+        setTrees((prev) =>
+          prev[ref] === item ? prev : { ...prev, [ref]: item },
+        ),
+      unregister: (ref: string) =>
+        setTrees((prev) => {
+          const { [ref]: _, ...rest } = prev;
+          return ref in prev ? rest : prev;
+        }),
+    }),
+    [],
+  );
+  const deferredTrees = useDeferredValue(trees);
+  const marks = useMemo(() => marksByRef(deferredTrees), [deferredTrees]);
 
   // keep the URL in sync with the state, so it can always be copied. Writing
   // it (compressing + history call) is debounced and done when idle, so typing
@@ -339,16 +303,15 @@ function App({
   useEffect(() => {
     const write = () => {
       const current = Array.from({ length: num }, (_, i) => values[i] ?? '');
-      const state = {
-        compare: { a: toDiff.a?.ref, b: toDiff.b?.ref },
-        searched: searched.filter((i) => i < num),
-      };
-      const pristine =
-        current.every((v) => !v) && !state.compare.a && !state.compare.b;
       window.history.replaceState(
         {},
         document.title,
-        pristine ? window.location.pathname : searchFromValues(current, state),
+        current.every((v) => !v)
+          ? window.location.pathname
+          : searchFromValues(
+              current,
+              searched.filter((i) => i < num),
+            ),
       );
     };
 
@@ -365,7 +328,7 @@ function App({
       window.clearTimeout(timeout);
       if (idle !== undefined) window.cancelIdleCallback(idle);
     };
-  }, [values, num, toDiff, searched]);
+  }, [values, num, searched]);
 
   useEffect(() => {
     (window as any).algoliasearch = algoliasearch;
@@ -373,8 +336,8 @@ function App({
   }, []);
 
   return (
-    <SetDiffContext.Provider value={setToDiff}>
-      <DiffContext.Provider value={toDiff}>
+    <RegisterContext.Provider value={register}>
+      <MarksContext.Provider value={marks}>
         <h1>Raw Algolia request parser</h1>
         <div className="decoderList">
           {Array.from({ length: num }).map((_, i) => (
@@ -400,9 +363,8 @@ function App({
             +
           </button>
         </p>
-        <DiffViewer />
-      </DiffContext.Provider>
-    </SetDiffContext.Provider>
+      </MarksContext.Provider>
+    </RegisterContext.Provider>
   );
 }
 
@@ -410,7 +372,7 @@ valuesFromSearch(window.location.search).then((defaultValues) => {
   createRoot(document.getElementById('root')!).render(
     <App
       defaultValues={defaultValues}
-      defaultState={stateFromSearch(
+      defaultSearched={searchedFromSearch(
         window.location.search,
         defaultValues.length || 1,
       )}

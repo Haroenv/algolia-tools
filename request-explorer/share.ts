@@ -8,10 +8,10 @@ import { CURRENT_DICTIONARY_PARAM, DICTIONARIES } from './dictionary';
 //           a future `d2` = V2, …; see DICTIONARIES in dictionary.ts)
 // Legacy:   `?0=<value>&1=<value>…`
 //
-// Optional UI state (which trees are picked as A/B for the diff, and which
-// decoders ran a search) lives in a separate `s` param. The diff
-// itself is never stored; it's recomputed from the inputs. Which decoders ran
-// a search is stored in `searched`, and those searches are re-run on load. It's purely additive: older clients ignore it, and it never changes `d`.
+// Optional UI state (which decoders ran a search) lives in a separate `s`
+// param. Those searches are re-run on load. It's purely additive: older clients
+// ignore it, and it never changes `d`. Everything that is compared is
+// recomputed from the inputs, so none of that is stored.
 //
 // Both of these must keep decoding forever. The dictionary can still improve:
 // add a new version under a new param rather than editing an old one.
@@ -69,71 +69,26 @@ export async function valuesFromSearch(search: string): Promise<string[]> {
   return [...params].filter(([k]) => /^\d+$/.test(k)).map(([, v]) => v);
 }
 
-/**
- * A reference to a comparable tree: `<decoder index>` for its decoded JSON,
- * `<decoder index>.agent` for its algolia agent, or `<decoder index>.results`
- * for its search results (which are re-fetched on load, see `searched`).
- */
-export type CompareRef = string;
-export type Compare = { a?: CompareRef; b?: CompareRef };
-export type ShareState = { compare?: Compare; searched?: number[] };
+// `s` is a base-36 number: a bitmap with `n` bits, where `n` is the number of
+// decoders (known from the `d` payload) and bit i means decoder i ran a search.
+//
+// Links made by an earlier version also have the A/B compare picks in the bits
+// above the bitmap. Those are ignored now, so they must stay unused: don't give
+// the high bits a new meaning, use a new param instead.
 
 const STATE_PARAM = 's';
-const REF = /^(\d+)(?:\.(agent|results))?$/;
-const KINDS = [undefined, 'agent', 'results'] as const;
 
-// The whole non-input state is one number, `s`, in base 36. With `n` decoders
-// (known from the `d` payload) it is mixed-radix, lowest part first:
-//
-//   searched bitmap  n bits, bit i = decoder i ran a search
-//   compare A        0 = none, else 1 + index * 3 + kind   (base 1 + 3n)
-//   compare B        same as A
-//
-//   s = ((B * (1 + 3n) + A) << n) | searched
-//
-// kind: 0 decoded JSON, 1 algolia agent, 2 search results.
-// Only valid for the same `n` on both ends, which holds as `d` stores one
-// value per decoder. Changing this layout needs a new param, not an edit.
-
-function refToSlot(ref: CompareRef | undefined, n: number): bigint {
-  const m = ref && REF.exec(ref);
-  if (!m || Number(m[1]) >= n) return 0n;
-  return BigInt(1 + Number(m[1]) * 3 + KINDS.indexOf(m[2] as any));
-}
-
-function slotToRef(slot: bigint, n: number): CompareRef | undefined {
-  if (slot === 0n) return undefined;
-  const v = Number(slot) - 1;
-  const index = Math.floor(v / 3);
-  if (index >= n) return undefined;
-  const kind = KINDS[v % 3];
-  return kind ? `${index}.${kind}` : `${index}`;
-}
-
-function encodeState(
-  n: number,
-  { compare, searched = [] }: ShareState,
-): bigint {
+function encodeSearched(n: number, searched: number[]): bigint {
   let mask = 0n;
   for (const i of searched) if (i >= 0 && i < n) mask |= 1n << BigInt(i);
-  const base = BigInt(1 + 3 * n);
-  const slots = refToSlot(compare?.b, n) * base + refToSlot(compare?.a, n);
-  return (slots << BigInt(n)) | mask;
+  return mask;
 }
 
-function decodeState(n: number, value: bigint): Required<ShareState> {
+function decodeSearched(n: number, value: bigint): number[] {
   const mask = value & ((1n << BigInt(n)) - 1n);
-  const base = BigInt(1 + 3 * n);
-  const slots = value >> BigInt(n);
-  return {
-    searched: Array.from({ length: n }, (_, i) => i).filter(
-      (i) => (mask >> BigInt(i)) & 1n,
-    ),
-    compare: {
-      a: slotToRef(slots % base, n),
-      b: slotToRef(slots / base, n),
-    },
-  };
+  return Array.from({ length: n }, (_, i) => i).filter(
+    (i) => (mask >> BigInt(i)) & 1n,
+  );
 }
 
 function parseBase36(str: string): bigint {
@@ -142,22 +97,16 @@ function parseBase36(str: string): bigint {
   return value;
 }
 
-/** Reads `?s=…` for a page with `n` decoders; empty when absent/invalid. */
-export function stateFromSearch(
-  search: string,
-  n: number,
-): Required<ShareState> {
+/** Reads `?s=…` for a page with `n` decoders: which ran a search. */
+export function searchedFromSearch(search: string, n: number): number[] {
   const raw = new URLSearchParams(search).get(STATE_PARAM);
-  if (!raw || !/^[0-9a-z]+$/.test(raw)) return { searched: [], compare: {} };
-  return decodeState(n, parseBase36(raw));
+  if (!raw || !/^[0-9a-z]+$/.test(raw)) return [];
+  return decodeSearched(n, parseBase36(raw));
 }
 
-export function searchFromValues(
-  values: string[],
-  state: ShareState = {},
-): string {
+export function searchFromValues(values: string[], searched: number[] = []) {
   let search = `?${CURRENT_DICTIONARY_PARAM}=${encodeValues(values)}`;
-  const value = encodeState(values.length, state);
+  const value = encodeSearched(values.length, searched);
   if (value !== 0n) search += `&${STATE_PARAM}=${value.toString(36)}`;
   return search;
 }

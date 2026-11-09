@@ -16,14 +16,6 @@ body {
   grid-template-columns: 8fr 1fr;
 }
 
-.compare-group {
-  width: fit-content;
-  margin-block: 0.3em;
-  display: grid;
-  grid-gap: 0.3em;
-  grid-template-columns: 1fr 1fr;
-}
-
 input {
   width: 100%;
   padding: 0.4em;
@@ -36,11 +28,6 @@ button {
   font: inherit;
   background: lightgrey;
   cursor: pointer;
-}
-
-button.active {
-  background: white;
-  font-weight: bold;
 }
 
 .error {
@@ -56,4 +43,28 @@ button.active {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(80ch, 1fr));
   grid-gap: 1em;
+}
+
+/* inline diff, highlighted in the trees themselves */
+.diff-changed {
+  background: #fda331;
+  color: black;
+}
+
+.diff-removed {
+  background: #fb0120;
+  color: white;
+}
+
+.diff-added {
+  background: #a1c659;
+  color: black;
+}
+
+.diff-badge {
+  margin-left: 0.5em;
+  padding: 0 0.4em;
+  background: #fda331;
+  color: black;
+  font-weight: bold;
 }
